@@ -1,237 +1,388 @@
-# StripeKit for Node.js
+# StripeKit
 
-> **Coming Soon** — StripeKit for Node.js is currently in the planning and early development stage.
+A complete, production-ready Stripe toolkit for Node.js and TypeScript. StripeKit wraps the official `stripe` SDK with a simple, opinionated layer for customers, payment methods, payments, checkout, subscriptions, invoices, coupons and webhooks — so you can integrate Stripe into your own interface without becoming a Stripe API expert.
 
-StripeKit is a developer-friendly toolkit for working with Stripe without requiring every project to implement the Stripe API from scratch. It is intended to provide a simple, consistent interface for payments, invoices, subscriptions, customers, products, prices, and related Stripe operations.
+You stay in full control of your database and UI. StripeKit only talks to Stripe: it creates and reads Stripe objects, normalizes the responses into clean, timezone-aware records, and — if you give it a storage adapter — persists that normalized state for you.
 
-The goal is to make common Stripe workflows easier to integrate while still allowing applications to retain control over their own data, database structure, and business logic.
+## Why StripeKit
 
-## Important Notice
-
-This README describes the **planned functionality and possible API design**. The examples, imports, method names, initialization options, return values, and feature list are subject to change as development progresses.
-
-The examples below are illustrative only. They do not represent a finished or currently available implementation.
-
-## Planned Features
-
-- Payment creation, confirmation, capture, cancellation, and status handling.
-- Customer and payment method management.
-- Invoice creation, item management, updating, finalizing, sending, paying, voiding, and deleting draft invoices.
-- Subscription creation, updating, pausing, resuming, cancelling, and scheduled cancellation.
-- Product and price management.
-- Optional database integration for storing Stripe-related data.
-- Support for custom application tables and custom data storage.
-- Automatic table management when custom tables are disabled.
-- Consistent success and failure responses for operations handled by the module.
-- Configurable timezone support, using UTC by default.
+- **One `init()` call.** Provide your secret key, choose `api` or `elements` mode, optionally set a timezone, and every module is ready to use.
+- **You choose the flow.** In `api` mode, payment and checkout calls return a hosted Stripe URL you redirect the customer to. In `elements` mode, they return a `client_secret` your own frontend uses to confirm the payment with Stripe Elements. In `both` mode, you decide per call.
+- **Elements are fully optional.** The browser-side helpers live in a separate `stripekit/elements` entry point. If you don't need Stripe Elements, you never import it.
+- **Timezones handled correctly.** Every timestamp StripeKit returns is first normalized to UTC (Stripe's native format), then — if you configured a timezone — converted once more into that timezone for display. Both values are always returned so you never have to do the math yourself.
+- **You own your data.** StripeKit never requires a database. Pass an optional `storage` adapter to persist customers, subscriptions, invoices, payments and payment methods in your own schema; without one, StripeKit still works, it just won't persist anything for you.
+- **Covers the whole billing surface.** Customers, payment methods, one-off payments, checkout (payment or subscription, with custom fields and coupons), subscriptions, invoices, coupons/promotion codes, and webhooks with automatic state sync.
 
 ## Installation
 
-Installation details will be added when the first development version is released.
-
-A possible future installation command may look like this:
-
 ```bash
-npm install stripe-kit
+npm install @yourscope/stripekit stripe
 ```
 
-The package name and installation process may change before the first release.
+If you plan to use Stripe Elements in the browser, also install:
+
+```bash
+npm install @stripe/stripe-js
+```
+
+## Quick start
+
+```ts
+import { StripeKit } from '@yourscope/stripekit';
+
+const kit = StripeKit.init({
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  mode: 'api',
+  timezone: 'Europe/Amsterdam',
+  currency: 'eur',
+});
+
+const payment = await kit.payments.create({
+  amount: 2500,
+  currency: 'eur',
+  email: 'customer@example.com',
+  description: 'Pro plan',
+});
+
+console.log(payment.hostedUrl);
+```
+
+Every action StripeKit can perform is available under `kit.<module>.<action>()`. Import `StripeKit` anywhere in your codebase and initiate it once (see [Initialization](#initialization) for sharing a single instance across your app).
 
 ## Initialization
 
-StripeKit will require initialization before it can be used. StripeKit does not provide its own hosted database. A database connection must therefore be supplied by the application.
-
-A possible initialization structure:
-
-```js
-import { StripeKit } from 'stripe-kit';
-
-const stripeKit = await StripeKit.init({
-  stripeSecretKey: process.env.STRIPE_SECRET_KEY,
-
-  database: {
-    host: process.env.DB_HOST,
-    port: 3306,
-    database: process.env.DB_NAME,
-    username: process.env.DB_USERNAME,
-    password: process.env.DB_PASSWORD,
-  },
-
-  // Recommended for applications that require custom data storage.
-  use_custom_tables: true,
-
-  // UTC is used when this option is omitted.
-  timezone: 'Europe/Amsterdam',
+```ts
+StripeKit.init({
+  secretKey: string,
+  publishableKey?: string,
+  webhookSecret?: string,
+  mode: 'api' | 'elements' | 'both',
+  timezone?: string,
+  currency?: string,
+  successUrl?: string,
+  cancelUrl?: string,
+  storage?: StorageAdapter,
+  apiVersion?: string,
+  appInfo?: { name: string; version?: string; url?: string },
+  debug?: boolean,
+  maxNetworkRetries?: number,
+  timeout?: number,
 });
 ```
 
-The database configuration is expected to be required because StripeKit has no separate database of its own. The exact database driver, supported databases, option names, and initialization flow are still being evaluated.
+| Option | Required | Description |
+| --- | --- | --- |
+| `secretKey` | Yes | Your Stripe secret key (`sk_live_...` / `sk_test_...`). Never expose this in the browser. |
+| `mode` | Yes | `'api'`, `'elements'`, or `'both'`. Explained below. |
+| `publishableKey` | Only for `elements`/`both` | Your Stripe publishable key. Not used server-side, but returned via `kit.toClientConfig()` so your frontend can fetch it from your own backend instead of hardcoding it. |
+| `webhookSecret` | Only if using `kit.webhooks` | Your endpoint's signing secret from the Stripe Dashboard. |
+| `timezone` | No, defaults to `"UTC"` | Any IANA timezone, e.g. `"Europe/Amsterdam"`, `"America/New_York"`. See [Timezones](#timezones). |
+| `currency` | No, defaults to `"usd"` | Default 3-letter ISO currency for calls that don't specify one. |
+| `successUrl` / `cancelUrl` | No | Default redirect URLs used by hosted Checkout Sessions when not passed per call. |
+| `storage` | No | A `StorageAdapter` implementation. See [Storage adapter](#storage-adapter). |
 
-### Custom Tables
+If required options are missing or invalid, `StripeKit.init()` throws a `ConfigurationError` immediately, so misconfiguration is caught at boot time rather than mid-request.
 
-Using `use_custom_tables: true` is expected to be the recommended option for applications that need full control over the data they store.
+### Choosing a mode
 
-With custom tables enabled, the application may be responsible for providing or configuring the required tables and data mappings. This allows developers to decide which additional information should be stored, how records are related to users, and how Stripe data fits into an existing database structure.
+This is the single most important decision StripeKit asks you to make, because it decides what your payment and checkout calls hand back to you:
 
-The final custom-table API and schema requirements will be documented before the first stable release.
+- **`mode: 'api'`** — StripeKit creates a Stripe-hosted Checkout Session and returns `hostedUrl`. You redirect the customer there; Stripe hosts the entire payment form. Nothing to build on your frontend.
+- **`mode: 'elements'`** — StripeKit creates a `PaymentIntent` (or `SetupIntent`) and returns `clientSecret`. You mount your own Stripe Elements form (using the optional `stripekit/elements` helpers, or your own code) and confirm the payment yourself. Full control over your UI.
+- **`mode: 'both'`** — StripeKit defaults to the `'api'` behavior, but every call that creates a payment or checkout accepts a `mode` (or `flowOverride`) argument to choose per call.
 
-### Managed Tables
+```ts
+await kit.payments.create({ amount: 1000, mode: 'elements' }); // works even if global mode is 'api', as long as it's 'both'
+```
 
-When `use_custom_tables` is set to `false`, StripeKit is planned to manage the required tables, inserts, updates, and related database operations automatically.
+## Timezones
 
-```js
-const stripeKit = await StripeKit.init({
-  stripeSecretKey: process.env.STRIPE_SECRET_KEY,
-  database: {
-    host: process.env.DB_HOST,
-    port: 3306,
-    database: process.env.DB_NAME,
-    username: process.env.DB_USERNAME,
-    password: process.env.DB_PASSWORD,
-  },
-  use_custom_tables: false,
-  timezone: 'UTC',
+Stripe stores every timestamp as a Unix epoch — which is UTC by definition. StripeKit always does the conversion in two explicit steps, never one:
+
+1. **Normalize to UTC.** The raw Unix timestamp is converted into an ISO-8601 UTC string. This is always available as the `...Utc` field (e.g. `currentPeriodEndUtc`, `issuedAtUtc`, `paidAtUtc`).
+2. **Convert to your configured timezone.** If you set a `timezone` on init (anything other than `"UTC"`, the default), that UTC value is converted once more into your chosen timezone and exposed as the matching `...Local` field (e.g. `currentPeriodEndLocal`).
+
+```ts
+const kit = StripeKit.init({ secretKey, mode: 'api', timezone: 'Asia/Tokyo' });
+
+const sub = await kit.subscriptions.retrieve('sub_123');
+console.log(sub.currentPeriodEndUtc);   // "2026-09-01T00:00:00.000Z"
+console.log(sub.currentPeriodEndLocal); // "2026-09-01T09:00:00" in Asia/Tokyo
+```
+
+If you don't set a `timezone`, both fields are UTC, and no double conversion happens. You can also use the exported helpers directly:
+
+```ts
+import { unixToTimezone, nowInTimezone } from '@yourscope/stripekit';
+
+unixToTimezone(1735689600, 'Europe/Amsterdam');
+nowInTimezone('Europe/Amsterdam');
+```
+
+## Storage adapter
+
+StripeKit does not require a database, but every module that creates or reads Stripe state will call into an optional `storage` adapter if you provide one, so your own database always reflects reality without you writing that glue code yourself.
+
+```ts
+import type { StorageAdapter } from '@yourscope/stripekit';
+
+const storage: StorageAdapter = {
+  async findUserByEmail(email) { /* return { id, stripeCustomerId } | null */ },
+  async findUserById(id) { /* ... */ },
+  async saveCustomer(record) { /* upsert into your users/customers table */ },
+  async saveSubscription(record) { /* upsert into your subscriptions table */ },
+  async savePayment(record) { /* upsert into your payments table */ },
+  async saveInvoice(record) { /* upsert into your invoices table */ },
+  async savePaymentMethods(userId, records) { /* replace the user's saved methods */ },
+  async saveCoupon(record) { /* cache coupon/promo code metadata */ },
+  async markInvoiceDeleted(invoiceId) { /* soft-delete */ },
+  async hasProcessedWebhookEvent(eventId) { /* idempotency check, recommended in production */ },
+  async markWebhookEventProcessed(eventId, type) { /* ... */ },
+  async saveCheckoutSession(session) { /* persist in-flight custom checkout sessions */ },
+  async getCheckoutSession(id) { /* ... */ },
+};
+
+const kit = StripeKit.init({ secretKey, mode: 'api', storage });
+```
+
+Every method on the adapter is optional — implement only what you need. See `examples/storage-adapter-postgres.ts` for a full Postgres-backed implementation.
+
+> **Note on statelessness:** `kit.checkout` and `kit.webhooks` fall back to in-process memory for checkout sessions and webhook idempotency when no storage adapter is supplied. That's fine for local development or a single-instance deployment, but for production deployments running multiple instances or serverless functions, provide `saveCheckoutSession`/`getCheckoutSession` and `hasProcessedWebhookEvent`/`markWebhookEventProcessed` so state is shared correctly. StripeKit will log a warning whenever it falls back.
+
+## Modules
+
+### `kit.customers`
+
+```ts
+await kit.customers.create({ email, name?, phone?, address?, metadata? });
+await kit.customers.findOrCreateByEmail(email);
+await kit.customers.retrieve(customerId);
+await kit.customers.update(customerId, { name?, phone?, address?, defaultPaymentMethodId?, metadata? });
+await kit.customers.delete(customerId);
+await kit.customers.list({ email?, limit?, startingAfter? });
+await kit.customers.sync(customerId); // re-pull from Stripe and persist via storage
+```
+
+### `kit.paymentMethods`
+
+```ts
+await kit.paymentMethods.list(customerId);
+await kit.paymentMethods.attach({ paymentMethodId, customerId, setAsDefault? });
+await kit.paymentMethods.detach(paymentMethodId);
+await kit.paymentMethods.setDefault(customerId, paymentMethodId);
+await kit.paymentMethods.createSetupIntent({ customerId, usage? }); // to save a card for later, via Elements
+await kit.paymentMethods.sync(customerId);
+```
+
+### `kit.payments`
+
+One-off payments (PaymentIntents), respecting the `mode` you configured.
+
+```ts
+const payment = await kit.payments.create({
+  amount: 1999,            // minor currency units (cents)
+  currency: 'usd',
+  email: 'customer@example.com',
+  description: 'One-time purchase',
+});
+// payment.hostedUrl   -> set when the resolved flow is 'api'
+// payment.clientSecret -> set when the resolved flow is 'elements'
+
+await kit.payments.retrieve(paymentIntentId);
+await kit.payments.confirm(paymentIntentId, paymentMethodId?);
+await kit.payments.cancel(paymentIntentId);
+
+// Charge a card the customer already saved, without any customer interaction:
+await kit.payments.payWithSavedMethod({
+  customerId,
+  paymentMethodId,
+  amount: 999,
+  currency: 'usd',
 });
 ```
 
-In this mode, the module is planned to return a simple success or failure result for database setup and related tasks. This should allow an application to stop startup when initialization fails or continue when the setup succeeds.
+### `kit.checkout`
 
-A possible result format:
+The high-level module for building your own checkout flow: one-off payments or subscriptions, with optional custom fields and coupon codes, in either flow.
 
-```js
-{
-  success: true
-}
-```
-
-or:
-
-```js
-{
-  success: false,
-  error: 'Database initialization failed'
-}
-```
-
-The final response format may change.
-
-## Planned Payment Usage
-
-The following is an example of a possible payment workflow:
-
-```js
-const payment = await stripeKit.payments.create({
-  amount: 2500,
-  currency: 'eur',
-  customer_id: 'cus_example',
-  payment_method_id: 'pm_example',
-  description: 'Example order',
-});
-```
-
-Possible payment operations may include:
-
-```js
-await stripeKit.payments.get(paymentId);
-await stripeKit.payments.update(paymentId, { description: 'Updated order' });
-await stripeKit.payments.capture(paymentId);
-await stripeKit.payments.cancel(paymentId);
-```
-
-The exact distinction between creating, confirming, capturing, and cancelling payments will depend on the final StripeKit API design.
-
-## Planned Invoice Usage
-
-Applications will be expected to provide invoice data such as customer information, invoice items, quantities, prices, tax settings, and metadata.
-
-```js
-const invoice = await stripeKit.invoices.create({
-  customer_id: 'cus_example',
-  collection_method: 'send_invoice',
-  days_until_due: 14,
-  currency: 'eur',
-  items: [
-    {
-      description: 'Website development',
-      quantity: 1,
-      unit_amount: 125000,
-    },
-    {
-      description: 'Hosting',
-      quantity: 1,
-      unit_amount: 2500,
-    },
+```ts
+const checkout = await kit.checkout.create({
+  mode: 'subscription',              // or 'payment'
+  priceId: 'price_123',              // required for subscriptions
+  amount: 4900,                      // required for one-off payments (and for subscriptions in 'elements' mode)
+  email: 'customer@example.com',
+  couponCode: 'WELCOME10',
+  customFields: [
+    { key: 'company_name', label: 'Company name', required: true },
   ],
-  metadata: {
-    order_id: 'order_123',
+  fieldValues: { company_name: 'Acme BV' },
+});
+
+await kit.checkout.get(checkout.id);
+await kit.checkout.submitFields(checkout.id, { company_name: 'Acme BV' });
+await kit.checkout.applyCoupon({ checkoutId: checkout.id, couponCode: 'SAVE20', originalAmount: 4900 });
+await kit.checkout.markComplete(checkout.id);
+```
+
+### `kit.subscriptions`
+
+```ts
+await kit.subscriptions.create({ customerId, priceId, quantity?, trialPeriodDays?, collectionMethod? });
+await kit.subscriptions.retrieve(subscriptionId);
+await kit.subscriptions.cancel({ subscriptionId, atPeriodEnd? });
+await kit.subscriptions.resume(subscriptionId);
+await kit.subscriptions.toggleCollectionMethod({ subscriptionId, collectionMethod: 'send_invoice', daysUntilDue: 14 });
+await kit.subscriptions.updateFields({ subscriptionId, fieldValues: { seats: '10' } });
+await kit.subscriptions.applyPromotionCode(subscriptionId, promotionCodeId);
+await kit.subscriptions.listByCustomer(customerId);
+await kit.subscriptions.sync(subscriptionId);
+```
+
+### `kit.invoices`
+
+```ts
+await kit.invoices.retrieve(invoiceId);
+await kit.invoices.listByCustomer(customerId, status?);
+await kit.invoices.listBySubscription(subscriptionId);
+await kit.invoices.payWithSavedMethod({ invoiceId, customerId, paymentMethodId });
+await kit.invoices.voidInvoice(invoiceId);
+await kit.invoices.finalize(invoiceId);
+await kit.invoices.sync(invoiceId);
+```
+
+Invoices include a normalized `lineItems` array and both UTC and local timestamps for `dueAt`, `paidAt` and `issuedAt`.
+
+### `kit.coupons`
+
+```ts
+await kit.coupons.create({ code: 'SUMMER25', discountType: 'percent', discountValue: 25, duration: 'once' });
+await kit.coupons.validate('SUMMER25'); // returns null if invalid, expired or inactive
+await kit.coupons.applyToSubscription(subscriptionId, stripePromotionCodeId);
+await kit.coupons.list();
+await kit.coupons.deactivate(stripePromotionCodeId);
+```
+
+### `kit.webhooks`
+
+```ts
+const result = await kit.webhooks.process({
+  payload: rawRequestBody, // Buffer or string, must be the raw, unparsed body
+  signature: req.headers['stripe-signature'],
+  handlers: {
+    onPaymentSucceeded: async (paymentIntent) => { /* ... */ },
+    onInvoicePaid: async (invoice) => { /* ... */ },
+    onSubscriptionUpdated: async (subscription) => { /* ... */ },
+    onSubscriptionDeleted: async (subscription) => { /* ... */ },
   },
 });
 ```
 
-Planned invoice operations may include:
+`kit.webhooks.process()` verifies the Stripe signature, deduplicates by event ID, and — unless you pass `autoSync: false` — automatically re-syncs the relevant object (payment, invoice, subscription, or payment methods) via your storage adapter before calling your handler. This means your database is always updated even if you don't implement a handler for a given event.
 
-```js
-await stripeKit.invoices.addItem(invoiceId, {
-  description: 'Additional support',
-  quantity: 2,
-  unit_amount: 5000,
-  currency: 'eur',
-});
+### `kit.sync`
 
-await stripeKit.invoices.update(invoiceId, {
-  description: 'Updated invoice description',
-});
+A convenience module for pulling the full current state of a customer from Stripe on demand, e.g. after a support request or a manual reconciliation job:
 
-await stripeKit.invoices.finalize(invoiceId);
-await stripeKit.invoices.send(invoiceId);
-await stripeKit.invoices.pay(invoiceId);
-await stripeKit.invoices.void(invoiceId);
-await stripeKit.invoices.delete(invoiceId); // Intended for draft invoices only.
+```ts
+const state = await kit.sync.everythingForCustomer(customerId, userId);
+// state.customer, state.subscriptions, state.invoices, state.paymentMethods
 ```
 
-Invoice actions will be restricted according to Stripe's invoice status rules. For example, draft invoices may be updated or deleted, while finalized invoices may require different actions such as payment, voiding, or marking as uncollectible.
+## Stripe Elements (optional, browser-side)
 
-## Planned Subscription Usage
+Import from the separate `stripekit/elements` entry point only where you need it — it is never bundled into your server code.
 
-StripeKit is intended to simplify the complete subscription lifecycle.
+```ts
+import { PaymentElementController } from '@yourscope/stripekit/elements';
 
-```js
-const subscription = await stripeKit.subscriptions.create({
-  customer_id: 'cus_example',
-  price_id: 'price_example',
-  quantity: 1,
-});
-```
-
-Possible subscription operations:
-
-```js
-await stripeKit.subscriptions.update(subscriptionId, {
-  price_id: 'price_new_example',
-  quantity: 2,
+const controller = await PaymentElementController.create({
+  publishableKey,   // fetch this from your backend via kit.toClientConfig()
+  clientSecret,     // returned by kit.payments.create() or kit.checkout.create() in 'elements' mode
+  appearance: { theme: 'stripe' },
 });
 
-await stripeKit.subscriptions.pause(subscriptionId);
-await stripeKit.subscriptions.resume(subscriptionId);
-await stripeKit.subscriptions.cancel(subscriptionId);
-await stripeKit.subscriptions.cancelAtPeriodEnd(subscriptionId);
-await stripeKit.subscriptions.resumeCancellation(subscriptionId);
+controller.mount({ containerSelector: '#payment-element' });
+
+const result = await controller.confirmPayment({
+  returnUrl: 'https://yourapp.com/billing/success',
+});
+
+if (!result.success) {
+  console.error(result.error);
+}
 ```
 
-The final implementation may use different method names or expose additional options for pause behavior, proration, billing cycle changes, trial periods, and cancellation timing.
+See `examples/elements-mode-frontend.html` for a full working page, and `examples/elements-mode-backend.ts` for the matching Express backend.
 
-## Database Responsibility
+## Error handling
 
-StripeKit is planned to handle the repetitive database work required by common Stripe integrations, including records, relationships, inserts, updates, and synchronization data. However, the application must always provide database credentials because StripeKit does not include or host a database.
+Every module throws typed errors you can catch and branch on:
 
-Applications that require maximum customization should use custom tables. Applications that prefer convenience may disable custom tables and allow StripeKit to manage the required database structure.
+```ts
+import { ValidationError, NotFoundError, StripeOperationError, ConfigurationError } from '@yourscope/stripekit';
 
-## Development Status
+try {
+  await kit.payments.create({ amount: 10, currency: 'usd' });
+} catch (error) {
+  if (error instanceof ValidationError) {
+    // amount below Stripe's minimum, bad email, etc. error.fieldErrors may be set.
+  } else if (error instanceof StripeOperationError) {
+    // Stripe itself rejected the request; error.cause holds the original Stripe error.
+  }
+}
+```
 
-StripeKit for Node.js is **Coming Soon**.
+## Currency and amounts
 
-No stable API, production-ready release, or backwards-compatibility guarantee is available yet. Follow this repository for development updates, documentation changes, and release announcements.
+All amounts are always in minor currency units (cents), matching Stripe's own convention, so there's never ambiguity between `19.99` and `1999`. Helpers are exported if you need to convert:
+
+```ts
+import { toMinorUnits, toMajorUnits, formatMoney } from '@yourscope/stripekit';
+
+toMinorUnits(19.99, 'usd');      // 1999
+toMajorUnits(1999, 'usd');       // 19.99
+formatMoney(1999, 'usd');        // "$19.99"
+```
+
+## Project structure
+
+```
+src/
+  StripeKit.ts            Main class, init() and module wiring
+  index.ts                Package entry point
+  types/                  All public TypeScript types
+  core/                   Timezone, money, validation, errors, logging, tokens
+  modules/
+    customers.ts
+    paymentMethods.ts
+    payments.ts
+    checkout.ts
+    subscriptions.ts
+    invoices.ts
+    coupons.ts
+    webhooks.ts
+    sync.ts
+  elements/                Optional browser-side entry point (stripekit/elements)
+    index.ts
+    loadElements.ts
+    PaymentElementController.ts
+    types.ts
+examples/
+  basic-api-mode.ts
+  elements-mode-backend.ts
+  elements-mode-frontend.html
+  webhook-handler-express.ts
+  storage-adapter-postgres.ts
+```
+
+## Building from source
+
+```bash
+npm install
+npm run typecheck
+npm run build
+```
 
 ## License
 
-The license and contribution guidelines will be added before the first public release.
+MIT

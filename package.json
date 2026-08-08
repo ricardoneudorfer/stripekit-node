@@ -1,18 +1,63 @@
 {
-  "name": "@ricardoneudorfer/stripekit",
-  "version": "0.0.0",
-  "description": "A simple toolkit for Stripe payments, invoices, subscriptions, and more.",
+  "name": "@yourscope/stripekit",
+  "version": "1.0.0",
+  "description": "A complete, production-ready Stripe integration toolkit for Node.js and TypeScript. Handles customers, payment methods, payments, checkout, subscriptions, invoices, coupons, webhooks and Stripe Elements with built-in timezone handling.",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "type": "commonjs",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./elements": {
+      "types": "./dist/elements/index.d.ts",
+      "import": "./dist/elements/index.mjs",
+      "require": "./dist/elements/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts src/elements/index.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts src/elements/index.ts --format cjs,esm --dts --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts"
+  },
   "keywords": [
     "stripe",
     "payments",
-    "invoices",
     "subscriptions",
-    "billing"
+    "invoices",
+    "checkout",
+    "elements",
+    "billing",
+    "typescript"
   ],
-  "license": "MIT",
-  "readme": "README.md",
-  "files": [
-    "README.md",
-    "package.json"
-  ]
+  "peerDependencies": {
+    "@stripe/stripe-js": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@stripe/stripe-js": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "stripe": "^17.0.0"
+  },
+  "devDependencies": {
+    "@stripe/stripe-js": "^4.0.0",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
