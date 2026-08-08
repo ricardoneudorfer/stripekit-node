@@ -1,6 +1,6 @@
 {
   "name": "@ricardoneudorfer/stripekit",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A complete, production-ready Stripe integration toolkit for Node.js and TypeScript. Handles customers, payment methods, payments, checkout, subscriptions, invoices, coupons, webhooks and Stripe Elements with built-in timezone handling.",
   "license": "MIT",
   "main": "dist/index.js",
