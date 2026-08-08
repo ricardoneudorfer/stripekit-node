@@ -1,4 +1,4 @@
-import { StripeKit } from '@yourscope/stripekit';
+import { StripeKit } from '@ricardoneudorfer/stripekit';
 import express from 'express';
 
 const kit = StripeKit.init({

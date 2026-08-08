@@ -1,4 +1,4 @@
-import { StripeKit } from '@yourscope/stripekit';
+import { StripeKit } from '@ricardoneudorfer/stripekit';
 
 const kit = StripeKit.init({
   secretKey: process.env.STRIPE_SECRET_KEY!,

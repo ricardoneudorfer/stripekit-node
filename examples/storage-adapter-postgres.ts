@@ -1,4 +1,4 @@
-import type { StorageAdapter } from '@yourscope/stripekit';
+import type { StorageAdapter } from '@ricardoneudorfer/stripekit';
 import { Pool } from 'pg';
 
 const pool = new Pool();
