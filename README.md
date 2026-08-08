@@ -16,7 +16,7 @@ You stay in full control of your database and UI. StripeKit only talks to Stripe
 ## Installation
 
 ```bash
-npm install @yourscope/stripekit stripe
+npm install @ricardoneudorfer/stripekit stripe
 ```
 
 If you plan to use Stripe Elements in the browser, also install:
@@ -28,7 +28,7 @@ npm install @stripe/stripe-js
 ## Quick start
 
 ```ts
-import { StripeKit } from '@yourscope/stripekit';
+import { StripeKit } from '@ricardoneudorfer/stripekit';
 
 const kit = StripeKit.init({
   secretKey: process.env.STRIPE_SECRET_KEY!,
@@ -113,7 +113,7 @@ console.log(sub.currentPeriodEndLocal); // "2026-09-01T09:00:00" in Asia/Tokyo
 If you don't set a `timezone`, both fields are UTC, and no double conversion happens. You can also use the exported helpers directly:
 
 ```ts
-import { unixToTimezone, nowInTimezone } from '@yourscope/stripekit';
+import { unixToTimezone, nowInTimezone } from '@ricardoneudorfer/stripekit';
 
 unixToTimezone(1735689600, 'Europe/Amsterdam');
 nowInTimezone('Europe/Amsterdam');
@@ -293,7 +293,7 @@ const state = await kit.sync.everythingForCustomer(customerId, userId);
 Import from the separate `stripekit/elements` entry point only where you need it — it is never bundled into your server code.
 
 ```ts
-import { PaymentElementController } from '@yourscope/stripekit/elements';
+import { PaymentElementController } from '@ricardoneudorfer/stripekit/elements';
 
 const controller = await PaymentElementController.create({
   publishableKey,   // fetch this from your backend via kit.toClientConfig()
@@ -319,7 +319,7 @@ See `examples/elements-mode-frontend.html` for a full working page, and `example
 Every module throws typed errors you can catch and branch on:
 
 ```ts
-import { ValidationError, NotFoundError, StripeOperationError, ConfigurationError } from '@yourscope/stripekit';
+import { ValidationError, NotFoundError, StripeOperationError, ConfigurationError } from '@ricardoneudorfer/stripekit';
 
 try {
   await kit.payments.create({ amount: 10, currency: 'usd' });
@@ -337,7 +337,7 @@ try {
 All amounts are always in minor currency units (cents), matching Stripe's own convention, so there's never ambiguity between `19.99` and `1999`. Helpers are exported if you need to convert:
 
 ```ts
-import { toMinorUnits, toMajorUnits, formatMoney } from '@yourscope/stripekit';
+import { toMinorUnits, toMajorUnits, formatMoney } from '@ricardoneudorfer/stripekit';
 
 toMinorUnits(19.99, 'usd');      // 1999
 toMajorUnits(1999, 'usd');       // 19.99
