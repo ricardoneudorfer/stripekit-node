@@ -124,7 +124,7 @@ nowInTimezone('Europe/Amsterdam');
 StripeKit does not require a database, but every module that creates or reads Stripe state will call into an optional `storage` adapter if you provide one, so your own database always reflects reality without you writing that glue code yourself.
 
 ```ts
-import type { StorageAdapter } from '@yourscope/stripekit';
+import type { StorageAdapter } from '@ricardoneudorfer/stripekit';
 
 const storage: StorageAdapter = {
   async findUserByEmail(email) { /* return { id, stripeCustomerId } | null */ },
